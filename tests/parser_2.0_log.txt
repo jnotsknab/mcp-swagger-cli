@@ -1,0 +1,38 @@
+# OpenAPI 2.0 Parser Test Log
+# Spec: test_specs/openapi_2.0_sample.yaml
+# Date: 2026-02-21
+
+## CLI Command
+python -m mcp_swagger_cli.cli create /workspace/test_specs/openapi_2.0_sample.yaml --output /output/audit_2.0 --name audit_20 --verbose
+
+## CLI Output
+MCP Swagger CLI v0.1.0
+
+  Generated /output/audit_2.0/audit_20/__init__.py
+  Generated /output/audit_2.0/audit_20/main.py
+  Generated /output/audit_2.0/pyproject.toml
+  Generated /output/audit_2.0/requirements.txt
+  Generated /output/audit_2.0/README.md
+  Generated /output/audit_2.0/SPEC_INFO.md
+Generated MCP server at /output/audit_2.0
+
+✓ Parsing specification...
+✓ Generating MCP server...
+
+✓ MCP server generated successfully!
+  Output: /output/audit_2.0
+  Name: audit_20
+  Transport: stdio
+
+## Issues Detected
+1. BASE_URL = "None" - should be "" or default
+2. Extra parameter "user: dict" in POST_users function signature (from body param incorrectly treated as query param)
+3. Body param should not appear as function parameter
+
+## Generated Function Signature
+async def POST_users(user: dict, body: dict[str, Any] = {},) -> dict[str, Any]:
+
+## Schemas Found
+- User (from #/definitions/User)
+
+## Status: PARTIAL SUCCESS (with issues)

@@ -1,0 +1,39 @@
+openapi: 3.0.1
+info:
+  title: OpenAPI 3.0 Sample
+  version: 1.0.0
+  description: "Sample with requestBody, components, and refs."
+paths:
+  /pets:
+    post:
+      summary: Add pet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pet'
+      responses:
+        '200':
+          description: OK
+      parameters:
+        - name: tags
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Tags'
+components:
+  schemas:
+    Pet:
+      type: object
+      required:
+        - name
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+    Tags:
+      type: array
+      items:
+        type: string

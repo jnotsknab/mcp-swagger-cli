@@ -1,0 +1,31 @@
+swagger: '2.0'
+info:
+  title: OpenAPI 2.0 Sample
+  version: 1.0.0
+  description: "Sample with body params, definitions, and required fields."
+paths:
+  /users:
+    post:
+      summary: Create user
+      parameters:
+        - in: body
+          name: user
+          required: true
+          schema:
+            $ref: '#/definitions/User'
+      responses:
+        201:
+          description: Created
+definitions:
+  User:
+    type: object
+    required:
+      - id
+      - username
+    properties:
+      id:
+        type: integer
+      username:
+        type: string
+      email:
+        type: string

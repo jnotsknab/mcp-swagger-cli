@@ -1,0 +1,42 @@
+# OpenAPI 3.0 Parser Test Log
+# Spec: test_specs/openapi_3.0_sample.yaml
+# Date: 2026-02-21
+
+## CLI Command
+python -m mcp_swagger_cli.cli create /workspace/test_specs/openapi_3.0_sample.yaml --output /output/audit_3.0 --name audit_30 --verbose
+
+## CLI Output
+MCP Swagger CLI v0.1.0
+
+  Generated /output/audit_3.0/audit_30/__init__.py
+  Generated /output/audit_3.0/audit_30/main.py
+  Generated /output/audit_3.0/pyproject.toml
+  Generated /output/audit_3.0/requirements.txt
+  Generated /output/audit_3.0/README.md
+  Generated /output/audit_3.0/SPEC_INFO.md
+Generated MCP server at /output/audit_3.0
+
+✓ Parsing specification...
+✓ Generating MCP server...
+
+✓ MCP server generated successfully!
+  Output: /output/audit_3.0
+  Name: audit_30
+  Transport: stdio
+
+## Issues Detected
+1. BASE_URL = "None" - should be "" or default
+2. The tags parameter type shows as "list" but should ideally be explicit array type
+
+## Generated Function Signature
+async def POST_pets(tags: list = None, body: dict[str, Any] = {},) -> dict[str, Any]:
+
+## Parameters Correctly Parsed
+- tags: query parameter (from components/schemas/Tags $ref - resolved)
+- body: requestBody (from requestBody with $ref to components/schemas/Pet - resolved)
+
+## Schemas Found
+- Pet (from #/components/schemas/Pet) - with required: ["name"]
+- Tags (from #/components/schemas/Tags)
+
+## Status: MOSTLY SUCCESS (minor issues)
