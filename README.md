@@ -55,7 +55,10 @@ mcp-swagger create ./api_spec.yaml \
     --output ./my_server \
     --name my_api \
     --transport stdio \
-    --base-url https://api.example.com
+    --base-url https://api.example.com \
+    --api-key-env MY_API_KEY \
+    --api-key-header Authorization \
+    --api-key-prefix Bearer
 ```
 
 ### Validate a Specification
@@ -87,15 +90,39 @@ Arguments:
   spec                  URL or file path to Swagger/OpenAPI specification
 
 Options:
-  -o, --output PATH     Output directory for generated MCP server
-  -n, --name TEXT      Name for the generated MCP server
-  -t, --transport TEXT Transport type (stdio or sse)
-  -b, --base-url TEXT  Base URL for API requests
+  -o, --output PATH           Output directory for generated MCP server
+  -n, --name TEXT             Name for the generated MCP server
+  -t, --transport TEXT        Transport type (stdio or sse)
+  -b, --base-url TEXT         Base URL for API requests
   --validate / --no-validate  Validate specification before generating
-  -f, --force          Overwrite output directory if it exists
-  -v, --verbose        Enable verbose output
-  --help               Show this message and exit.
+  -f, --force                 Overwrite output directory if it exists
+  -v, --verbose               Enable verbose output
+  --api-key-env TEXT          Environment variable name to read API key from at runtime
+  --api-key-header TEXT       HTTP header name for API key (default: Authorization)
+  --api-key-prefix TEXT       Prefix for API key in header (e.g., 'Bearer', 'Token', 'Bot', or empty)
+  -H, --header TEXT           Custom HTTP header as 'Name: Value' (repeatable)
+  -T, --tag TEXT              Filter operations by tag (repeatable)
+  --path-filter TEXT          Filter operations by path substring (repeatable)
+  --max-operations INT        Warn and abort if filtered operation count exceeds this number
+  --help                      Show this message and exit.
 ```
+
+### Filtering Large Specs
+
+Large APIs like Stripe or Discord can generate unmanageably large servers. Use `--path-filter` or `--tag` to scope generation:
+
+```bash
+# Filter by path substring (Discord guild endpoints only)
+mcp-swagger create ./discord.json -o ./server --path-filter /guilds --path-filter /channels
+
+# Filter by tag
+mcp-swagger create ./api.json -o ./server --tag payments --tag customers
+
+# Abort if too many operations
+mcp-swagger create ./api.json -o ./server --max-operations 50
+```
+
+> **Note:** Some APIs (e.g. Stripe) use a single `default` tag for all operations. Use `--path-filter` instead of `--tag` for these.
 
 ### `mcp-swagger validate-spec`
 
