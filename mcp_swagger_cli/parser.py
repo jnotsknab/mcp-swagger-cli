@@ -201,6 +201,18 @@ class OpenAPIParser:
                 parameters = path_params + operation.get("parameters", [])
                 params_list = []
                 
+                # Determine the effective consumes for this operation (Swagger 2.0)
+                # Operation-level consumes overrides global consumes
+                global_consumes = self._spec.get("consumes", [])
+                operation_consumes = operation.get("consumes", global_consumes)
+
+                # Also detect form/multipart from OpenAPI 3.x requestBody content types
+                if "requestBody" in operation:
+                    rb_content = operation["requestBody"].get("content", {})
+                    detected_types = list(rb_content.keys())
+                    if detected_types and not operation_consumes:
+                        operation_consumes = detected_types
+
                 # FIX Issue 2: Filter body params from params_list (only add non-body params)
                 for param in parameters:
                     # Skip body parameters - they will be handled separately as request_body
@@ -252,6 +264,7 @@ class OpenAPIParser:
                 if "requestBody" in operation:
                     rb = operation["requestBody"]
                     content = rb.get("content", {})
+                    # Prefer JSON, but also handle form/multipart
                     if "application/json" in content:
                         json_content = content["application/json"]
                         schema = json_content.get("schema", {})
@@ -262,6 +275,32 @@ class OpenAPIParser:
                             "required": rb.get("required", False),
                             "description": rb.get("description", ""),
                             "schema": schema,
+                        }
+                    elif "multipart/form-data" in content or "application/x-www-form-urlencoded" in content:
+                        # For OpenAPI 3.x form/multipart, extract fields as formData params
+                        form_key = "multipart/form-data" if "multipart/form-data" in content else "application/x-www-form-urlencoded"
+                        form_schema = content[form_key].get("schema", {})
+                        if "$ref" in form_schema:
+                            form_schema = self._resolve_schema_ref(form_schema)
+                        # Add form fields as formData parameters so the template can handle them
+                        form_props = form_schema.get("properties", {})
+                        required_fields = form_schema.get("required", [])
+                        for field_name, field_schema in form_props.items():
+                            if "$ref" in field_schema:
+                                field_schema = self._resolve_schema_ref(field_schema)
+                            params_list.append({
+                                "name": field_name,
+                                "in": "formData",
+                                "required": field_name in required_fields,
+                                "type": field_schema.get("type", field_schema.get("format", "string")),
+                                "description": field_schema.get("description", ""),
+                                "default": field_schema.get("default"),
+                                "enum": field_schema.get("enum"),
+                            })
+                        request_body = {
+                            "required": rb.get("required", False),
+                            "description": rb.get("description", ""),
+                            "schema": form_schema,
                         }
                 
                 # Handle body parameters (OpenAPI 2.0 style: in: body)
@@ -301,6 +340,7 @@ class OpenAPIParser:
                     "request_body": request_body,
                     "responses": responses,
                     "security": operation.get("security", []),
+                    "consumes": operation_consumes,
                 })
         
         return operations

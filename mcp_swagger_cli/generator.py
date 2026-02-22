@@ -89,7 +89,28 @@ class MCPServerGenerator:
         self.jinja_env.filters["escape_docstring"] = self._escape_docstring
         self.jinja_env.filters["sort_params"] = self._sort_params
         self.jinja_env.filters["sanitize_toml_string"] = self._sanitize_toml_string
+        self.jinja_env.filters["to_python_value"] = self._to_python_value
+
     
+    @staticmethod
+    def _to_python_value(value: Any) -> str:
+        """Convert a value to a Python literal representation."""
+        import json
+        if isinstance(value, bool):
+            return "True" if value else "False"
+        elif isinstance(value, type(None)):
+            return "None"
+        elif isinstance(value, (int, float)):
+            return repr(value)
+        elif isinstance(value, str):
+            return repr(value)
+        elif isinstance(value, list):
+            return "[" + ", ".join(MCPServerGenerator._to_python_value(v) for v in value) + "]"
+        elif isinstance(value, dict):
+            return "{" + ", ".join(f"{repr(k)}: {MCPServerGenerator._to_python_value(v)}" for k, v in value.items()) + "}"
+        else:
+            return repr(value)
+
     @staticmethod
     def _sanitize_name(name: str) -> str:
         """Sanitize a name to be a valid Python identifier."""

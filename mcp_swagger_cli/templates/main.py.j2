@@ -35,9 +35,14 @@ mcp = FastMCP(
 # HTTP client for API calls
 _http_client: httpx.AsyncClient | None = None
 
+{% if schemas %}
+# All API schemas defined once at module level
+_ALL_SCHEMAS: dict[str, Any] = {{ schemas | to_python_value }}
 
-def _build_headers() -> dict:
-    """Build HTTP headers including custom headers and API key authentication."""
+{% endif %}
+
+def _build_headers(extra: dict | None = None) -> dict:
+    """Build HTTP headers including custom headers, API key auth, and per-operation headers."""
     headers = {}
     {% if extra_headers %}
     # Static custom headers
@@ -52,6 +57,9 @@ def _build_headers() -> dict:
         prefix = "{{ api_key_prefix }}"
         headers["{{ api_key_header }}"] = f"{prefix} {api_key}".strip() if prefix else api_key
     {% endif %}
+    # Merge per-operation header parameters
+    if extra:
+        headers.update({k: v for k, v in extra.items() if v is not None})
     return headers
 
 
@@ -80,6 +88,10 @@ async def close_http_client() -> None:
 {% set has_params = params | length > 0 %}
 {% set has_body = operation.request_body is not none %}
 {% set func_name = operation.operation_id | sanitize_name %}
+{% set consumes = operation.consumes %}
+{% set is_multipart = 'multipart/form-data' in consumes %}
+{% set is_form = 'application/x-www-form-urlencoded' in consumes %}
+{% set is_form_data = is_multipart or is_form %}
 
 
 @mcp.tool()
@@ -87,7 +99,7 @@ async def {{ func_name }}(
     {%- for param in params | sort_params %}
     {{ param.name }}: {{ param.type | to_python_type }}{% if not param.required %} = None{% endif %},
     {%- endfor %}
-{% if has_body and operation.request_body.schema %}
+{% if has_body and operation.request_body.schema and not is_form_data %}
     body: dict[str, Any] = {},
 {% endif %}
 ) -> Any:
@@ -108,7 +120,7 @@ async def {{ func_name }}(
         {%- endfor %}
     {% endif %}
     
-    {% if has_body %}
+    {% if has_body and not is_form_data %}
     Args:
         body: Request body (JSON)
     {% endif %}
@@ -128,6 +140,15 @@ async def {{ func_name }}(
         {%- endfor %}
     }
     
+    # Collect per-operation header parameters
+    _op_headers = {
+        {%- for param in params %}
+        {% if param.in == 'header' %}
+        "{{ param.name }}": {{ param.name }},
+        {% endif %}
+        {%- endfor %}
+    }
+    
     # Build URL with path parameters
     url_path = "{{ operation.path }}"
     {% for param in params %}
@@ -138,14 +159,46 @@ async def {{ func_name }}(
     {% endfor %}
     {% else %}
     params = None
+    _op_headers = {}
     url_path = "{{ operation.path }}"
     {% endif %}
     
-    {% if has_body %}
-    # Use body for request body
-    json_data = body
+    {% if is_multipart %}
+    # Build multipart/form-data upload
+    _files = {}
+    _form_data = {}
+    {% for param in params %}
+    {% if param.in == 'formData' %}
+    {% if param.type == 'file' %}
+    if {{ param.name }} is not None:
+        _files["{{ param.name }}"] = {{ param.name }}
     {% else %}
-    json_data = None
+    if {{ param.name }} is not None:
+        _form_data["{{ param.name }}"] = {{ param.name }}
+    {% endif %}
+    {% endif %}
+    {% endfor %}
+    _request_kwargs = {}
+    if _files:
+        _request_kwargs["files"] = _files
+    if _form_data:
+        _request_kwargs["data"] = _form_data
+    {% elif is_form %}
+    # Build application/x-www-form-urlencoded data
+    _form_data = {
+        {%- for param in params %}
+        {% if param.in == 'formData' %}
+        "{{ param.name }}": {{ param.name }},
+        {% endif %}
+        {%- endfor %}
+    }
+    _request_kwargs = {"data": {k: v for k, v in _form_data.items() if v is not None}}
+    {% elif has_body %}
+    # Use body for JSON request body
+    json_data = body
+    _request_kwargs = {"json": json_data}
+    {% else %}
+    _request_kwargs = {}
     {% endif %}
     
     try:
@@ -153,8 +206,8 @@ async def {{ func_name }}(
             method="{{ operation.method | upper }}",
             url=url_path,
             params=params,
-            json=json_data,
-            headers=_build_headers(),
+            headers=_build_headers(_op_headers),
+            **_request_kwargs,
         )
         response.raise_for_status()
         return response.json()
@@ -178,10 +231,10 @@ async def {{ func_name }}(
 @mcp.resource("schema://api/schemas")
 async def get_api_schemas() -> str:
     """Get all available API schemas."""
-    schemas = {{ schema_names | tojson }}
+    schema_names = {{ schema_names | to_python_value }}
     return json.dumps({
-        "schemas": schemas,
-        "count": len(schemas),
+        "schemas": schema_names,
+        "count": len(schema_names),
     })
 
 
@@ -189,8 +242,7 @@ async def get_api_schemas() -> str:
 @mcp.resource("schema://api/{{ schema_name | lower }}")
 async def get_schema_{{ schema_name | sanitize_name }}() -> str:
     """Get the {{ schema_name }} schema definition."""
-    schema = {{ schemas | tojson }}.get("{{ schema_name }}", {})
-    return json.dumps(schema, indent=2)
+    return json.dumps(_ALL_SCHEMAS.get("{{ schema_name }}", {}), indent=2)
 
 
 {% endfor %}
@@ -207,7 +259,7 @@ async def get_api_operations() -> str:
             "method": "{{ operation.method }}",
             "path": "{{ operation.path }}",
             "summary": "{{ operation.summary | escape_docstring }}",
-            "tags": {{ operation.tags | tojson }},
+            "tags": {{ operation.tags | to_python_value }},
         },
         {% endfor %}
     ]
