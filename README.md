@@ -2,8 +2,7 @@
 
 > Generate MCP (Model Context Protocol) servers from Swagger/OpenAPI specifications
 
-[![Python Version](https://img.shields.io/pypi/pyversions/mcp-swagger-cli)](https://pypi.org/project/mcp-swagger-cli/)
-[![License](https://img.shields.io/pypi/l/mcp-swagger-cli)](LICENSE)
+> **Note:** This project was developed entirely by an autonomous AI agent swarm system built by [Suspiria](https://github.com/Suspiria).
 
 MCP Swagger CLI is a command-line tool that generates runnable MCP servers from Swagger/OpenAPI specifications. It maps API operations to MCP Tools, schemas to MCP Resources, and provides a complete, ready-to-use MCP server implementation.
 
