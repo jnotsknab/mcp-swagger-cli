@@ -15,6 +15,7 @@ Transport: {{ transport }}
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,25 @@ mcp = FastMCP(
 
 # HTTP client for API calls
 _http_client: httpx.AsyncClient | None = None
+
+
+def _build_headers() -> dict:
+    """Build HTTP headers including custom headers and API key authentication."""
+    headers = {}
+    {% if extra_headers %}
+    # Static custom headers
+    {% for key, value in extra_headers.items() %}
+    headers["{{ key }}"] = "{{ value }}"
+    {% endfor %}
+    {% endif %}
+    {% if api_key_env %}
+    # API key from environment variable
+    api_key = os.environ.get("{{ api_key_env }}")
+    if api_key:
+        prefix = "{{ api_key_prefix }}"
+        headers["{{ api_key_header }}"] = f"{prefix} {api_key}".strip() if prefix else api_key
+    {% endif %}
+    return headers
 
 
 async def get_http_client() -> httpx.AsyncClient:
@@ -70,7 +90,7 @@ async def {{ func_name }}(
 {% if has_body and operation.request_body.schema %}
     body: dict[str, Any] = {},
 {% endif %}
-) -> dict[str, Any]:
+) -> Any:
     """{{ operation.summary | escape_docstring }}
     
     {% if operation.description %}
@@ -107,8 +127,18 @@ async def {{ func_name }}(
         {% endif %}
         {%- endfor %}
     }
+    
+    # Build URL with path parameters
+    url_path = "{{ operation.path }}"
+    {% for param in params %}
+    {% if param.in == 'path' %}
+    if {{ param.name }} is not None:
+        url_path = url_path.replace("{{ '{' }}{{ param.name }}{{ '}' }}", str({{ param.name }}))
+    {% endif %}
+    {% endfor %}
     {% else %}
     params = None
+    url_path = "{{ operation.path }}"
     {% endif %}
     
     {% if has_body %}
@@ -121,9 +151,10 @@ async def {{ func_name }}(
     try:
         response = await client.request(
             method="{{ operation.method | upper }}",
-            url="{{ operation.path }}",
+            url=url_path,
             params=params,
             json=json_data,
+            headers=_build_headers(),
         )
         response.raise_for_status()
         return response.json()

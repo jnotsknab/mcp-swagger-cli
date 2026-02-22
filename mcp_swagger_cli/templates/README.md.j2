@@ -82,6 +82,22 @@ BASE_URL = "https://your-api.example.com"
 
 Or set an environment variable and modify the server to read it.
 
+## Authentication
+
+{% if api_key_env %}
+This server reads your API key from the `{{ api_key_env }}` environment variable at runtime.
+
+Set it before running:
+```bash
+export {{ api_key_env }}=your_api_key_here
+```
+
+The key is sent as: `{{ api_key_header }}: {{ api_key_prefix }} <your_key>`
+{% else %}
+No API key was configured at generation time. If the API requires authentication,
+re-generate with `--api-key-env YOUR_ENV_VAR_NAME` or pass headers manually via `-H`.
+{% endif %}
+
 ## Available Tools
 
 {% if operations -%}

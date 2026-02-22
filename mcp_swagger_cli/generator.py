@@ -22,6 +22,13 @@ class MCPServerGenerator:
         base_url: str | None = None,
         validate: bool = True,
         verbose: bool = False,
+        api_key_env: str | None = None,
+        api_key_header: str = "Authorization",
+        api_key_prefix: str = "Bearer",
+        extra_headers: dict[str, str] | None = None,
+        tags: list[str] | None = None,
+        path_filters: list[str] | None = None,
+        max_operations: int | None = None,
     ) -> None:
         """Initialize the generator.
         
@@ -32,12 +39,26 @@ class MCPServerGenerator:
             base_url: Base URL for API requests
             validate: Whether to validate the spec
             verbose: Enable verbose output
+            api_key_env: Environment variable name to read API key from
+            api_key_header: HTTP header name for API key
+            api_key_prefix: Prefix for API key in header (e.g., 'Bearer')
+            extra_headers: Additional custom headers as dict
+            tags: Filter operations by tags (only include operations with matching tags)
+            path_filters: Filter operations by path (only include operations with paths containing the filter)
+            max_operations: Maximum number of operations to include (requires tags or path_filters if exceeded)
         """
         self.spec_path = spec_path
         self.server_name = self._sanitize_name(server_name)
         self.transport = transport
         self.base_url = base_url
         self.verbose = verbose
+        self.api_key_env = api_key_env
+        self.api_key_header = api_key_header
+        self.api_key_prefix = api_key_prefix
+        self.extra_headers = extra_headers or {}
+        self.tags = tags or []
+        self.path_filters = path_filters or []
+        self.max_operations = max_operations
         
         # Parse the spec
         self.parser = OpenAPIParser(spec_path=spec_path, validate=validate)
@@ -222,6 +243,9 @@ class MCPServerGenerator:
         operations = self.parser.get_operations()
         schemas = self.parser.get_schemas()
         
+        # Filter operations based on tags and path_filters
+        filtered_operations = self._filter_operations(operations)
+        
         # Prepare context
         context = {
             "server_name": self.server_name,
@@ -230,11 +254,16 @@ class MCPServerGenerator:
             "description": self.spec_info.get("description", ""),
             "base_url": self.base_url,
             "transport": self.transport,
-            "operations": operations,
+            "operations": filtered_operations,
             "schemas": schemas,
             "schema_names": list(schemas.keys()),
             "path_count": self.spec_info.get("path_count", 0),
-            "operation_count": self.spec_info.get("operation_count", 0),
+            "operation_count": len(filtered_operations),
+            # Authentication parameters
+            "api_key_env": self.api_key_env,
+            "api_key_header": self.api_key_header,
+            "api_key_prefix": self.api_key_prefix,
+            "extra_headers": self.extra_headers,
         }
         
         # Render template
@@ -246,6 +275,82 @@ class MCPServerGenerator:
         
         if self.verbose:
             print(f"  Generated {main_py}")
+    
+    def _filter_operations(self, operations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Filter operations based on tags and path_filters.
+        
+        Args:
+            operations: List of operation dictionaries from the parser
+            
+        Returns:
+            Filtered list of operations
+            
+        Raises:
+            GeneratorError: If max_operations is exceeded without sufficient filtering
+        """
+        if not self.tags and not self.path_filters:
+            # No filtering requested, but check max_operations
+            if self.max_operations is not None and len(operations) > self.max_operations:
+                raise GeneratorError(
+                    f"This specification contains {len(operations)} operations, which exceeds "
+                    f"the maximum of {self.max_operations}. Use --tag or --path-filter to reduce "
+                    "the number of operations."
+                )
+            return operations
+        
+        # Apply filtering
+        filtered = []
+        for op in operations:
+            op_tags = op.get("tags", [])
+            op_path = op.get("path", "")
+            
+            # Check tag filter: keep if any op.tags intersects with self.tags
+            tag_match = False
+            if self.tags:
+                # If tags specified, operation must have at least one matching tag
+                if op_tags and any(tag in op_tags for tag in self.tags):
+                    tag_match = True
+            
+            # Check path filter: keep if operation path matches filter as a path segment
+            path_match = False
+            if self.path_filters:
+                # If path_filters specified, operation path must match filter as a proper path prefix
+                # This means: exact match OR filter is a parent path (followed by /)
+                # E.g., filter "/users" matches "/users" and "/users/{id}" but NOT "/usersabc"
+                for pf in self.path_filters:
+                    # Normalize filter to ensure it starts with /
+                    if not pf.startswith('/'):
+                        pf = '/' + pf
+                    # Match if path equals filter OR path starts with filter + "/"
+                    if op_path == pf or op_path.startswith(pf + '/'):
+                        path_match = True
+                        break
+            
+            # Include operation if either filter matches (OR logic)
+            # If only one filter type is specified, that filter must match
+            # If both are specified, operation matches if either matches
+            if self.tags and self.path_filters:
+                # Both filters present: OR logic
+                if tag_match or path_match:
+                    filtered.append(op)
+            elif self.tags:
+                # Only tags filter: must match tags
+                if tag_match:
+                    filtered.append(op)
+            elif self.path_filters:
+                # Only path filter: must match path
+                if path_match:
+                    filtered.append(op)
+        
+        # Check if filtered operations exceed max_operations
+        if self.max_operations is not None and len(filtered) > self.max_operations:
+            raise GeneratorError(
+                f"After filtering, {len(filtered)} operations remain, which exceeds "
+                f"the maximum of {self.max_operations}. Use --tag or --path-filter to further "
+                "reduce the number of operations."
+            )
+        
+        return filtered
     
     def _generate_pyproject_toml(self, output_dir: Path) -> None:
         """Generate the pyproject.toml file."""
@@ -292,6 +397,11 @@ httpx>=0.27.0
             "transport": self.transport,
             "operation_count": self.spec_info.get("operation_count", 0),
             "path_count": self.spec_info.get("path_count", 0),
+            # Authentication parameters
+            "api_key_env": self.api_key_env,
+            "api_key_header": self.api_key_header,
+            "api_key_prefix": self.api_key_prefix,
+            "extra_headers": self.extra_headers,
         }
         
         content = self._render_template("README.md.j2", context)

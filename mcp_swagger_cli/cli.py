@@ -92,6 +92,43 @@ def create(
         "-v",
         help="Enable verbose output",
     ),
+    api_key_env: Optional[str] = typer.Option(
+        None,
+        "--api-key-env",
+        help="Environment variable name to read API key from at runtime",
+    ),
+    api_key_header: Optional[str] = typer.Option(
+        "Authorization",
+        "--api-key-header",
+        help="HTTP header name for API key (default: Authorization)",
+    ),
+    api_key_prefix: Optional[str] = typer.Option(
+        "Bearer",
+        "--api-key-prefix",
+        help="Prefix for API key in header (e.g., 'Bearer', 'Token', or empty)",
+    ),
+    header: Optional[list[str]] = typer.Option(
+        None,
+        "--header",
+        "-H",
+        help="Custom HTTP header as 'Name: Value' (repeatable)",
+    ),
+    tag: Optional[list[str]] = typer.Option(
+        None,
+        "--tag",
+        "-T",
+        help="Filter operations by tags (repeatable). Only operations with matching tags will be included.",
+    ),
+    path_filter: Optional[list[str]] = typer.Option(
+        None,
+        "--path-filter",
+        help="Filter operations by path (repeatable). Only operations with paths containing the filter will be included.",
+    ),
+    max_operations: Optional[int] = typer.Option(
+        None,
+        "--max-operations",
+        help="Maximum number of operations to include. If exceeded, requires --tag or --path-filter.",
+    ),
 ) -> None:
     """
     Create an MCP server from a Swagger/OpenAPI specification.
@@ -103,6 +140,10 @@ def create(
         mcp-swagger create ./api_spec.yaml -o ./server --name my_api
         
         mcp-swagger create ./spec.json -o ./server --transport sse --base-url https://api.example.com
+        
+        mcp-swagger create ./spec.json -o ./server --tag pets --tag store
+        
+        mcp-swagger create ./spec.json -o ./server --path-filter /users --path-filter /products
     """
     console.print(f"[bold cyan]MCP Swagger CLI[/bold cyan] v{__version__}")
     console.print()
@@ -135,6 +176,15 @@ def create(
         )
         raise typer.Exit(1)
     
+    # Parse custom headers
+    parsed_headers = {}
+    for h in header or []:
+        if ":" not in h:
+            console.print(f"[bold red]Error:[/bold red] Invalid header format '{h}'. Expected 'Name: Value'")
+            raise typer.Exit(1)
+        k, v = h.split(":", 1)
+        parsed_headers[k.strip()] = v.strip()
+    
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -154,12 +204,32 @@ def create(
                 base_url=base_url,
                 validate=validate,
                 verbose=verbose,
+                api_key_env=api_key_env,
+                api_key_header=api_key_header,
+                api_key_prefix=api_key_prefix,
+                extra_headers=parsed_headers,
+                tags=tag,
+                path_filters=path_filter,
+                max_operations=max_operations,
             )
             progress.update(task_parse, completed=True)
         except Exception as e:
             progress.update(task_parse, failed=True)
             console.print(f"[bold red]Error parsing specification:[/bold red] {e}")
             raise typer.Exit(1)
+        
+        # Check for warning: operation_count > 100 and no tags/path_filter provided
+        operation_count = generator.spec_info.get("operation_count", 0)
+        has_tag_filter = tag is not None and len(tag) > 0
+        has_path_filter = path_filter is not None and len(path_filter) > 0
+        
+        if operation_count > 100 and not has_tag_filter and not has_path_filter:
+            console.print()
+            console.print(
+                f"[yellow]Warning:[/yellow] This specification contains {operation_count} operations. "
+                "Generating MCP servers with many operations can be slow and may hit LLM context limits. "
+                "Consider filtering operations using --tag/-T or --path-filter."
+            )
         
         # Task 2: Generate MCP server
         task_generate = progress.add_task(
