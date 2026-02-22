@@ -1,9 +1,5 @@
 # MCP Swagger CLI
 
-> Generate MCP (Model Context Protocol) servers from Swagger/OpenAPI specifications
-
-> **Note:** This project was developed entirely by an autonomous AI agent swarm system built by [Suspiria](https://github.com/Suspiria).
-
 MCP Swagger CLI is a command-line tool that generates runnable MCP servers from Swagger/OpenAPI specifications. It maps API operations to MCP Tools, schemas to MCP Resources, and provides a complete, ready-to-use MCP server implementation.
 
 ## Features
